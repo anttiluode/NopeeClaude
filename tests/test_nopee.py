@@ -75,3 +75,22 @@ def test_inblock_hooks_zero_init_and_gradients():
 def test_bootstrap_sign():
     r = rel_improvement([1.0, 1.1, 0.9, 1.0], [2.0, 2.1, 1.9, 2.2])
     assert r["rel"] > 0.4 and r["lo"] > 0
+
+
+def test_lowmem_loader_matches_standard(tmp_path):
+    from diffusers import WanTransformer3DModel
+    from nopee.wan import load_transformer_lowmem
+    ref = tiny_generator().transformer
+    ref.save_pretrained(tmp_path, max_shard_size="20KB")          # several fp32 shards, like the real repo
+    a = WanTransformer3DModel.from_pretrained(tmp_path, torch_dtype=torch.bfloat16)
+    a.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+    b = load_transformer_lowmem(str(tmp_path), fp8=True, local=True)
+    sa, sb = a.state_dict(), b.state_dict()
+    assert sa.keys() == sb.keys()
+    for k in sa:
+        assert sa[k].dtype == sb[k].dtype, k
+        assert torch.equal(sa[k].float(), sb[k].float()), k
+    x = torch.randn(1, 16, 3, 4, 4)
+    kw = dict(timestep=torch.tensor([500.0]), encoder_hidden_states=torch.randn(1, 8, 16), return_dict=False)
+    with torch.no_grad():
+        assert torch.equal(a(hidden_states=x.bfloat16(), **kw)[0], b(hidden_states=x.bfloat16(), **kw)[0])

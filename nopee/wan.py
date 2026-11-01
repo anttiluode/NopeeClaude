@@ -131,19 +131,66 @@ def encode_prompts(model_key, prompts, device="cuda", mode="auto", max_len=512):
 
 # ------------------------------------------------------------------------- phase 2: video
 
+def load_transformer_lowmem(source, fp8=True, local=False):
+    """Load the Wan transformer one tensor at a time, casting each straight to its storage dtype.
+
+    The Wan2.2-5B repo stores the transformer in fp32 (~20 GB). The normal route builds the whole
+    bf16 model in RAM first (~10 GB, plus a shard being converted). This one builds an empty model,
+    applies the same fp8-storage rule diffusers uses, and fills it tensor by tensor, so peak RAM is
+    about the final size (~5.5 GB). The result is identical to
+    from_pretrained(torch_dtype=bfloat16) + enable_layerwise_casting (checked in the tests)."""
+    import json
+    import os
+    from accelerate import init_empty_weights
+    from accelerate.utils import set_module_tensor_to_device
+    from diffusers import WanTransformer3DModel
+    from safetensors import safe_open
+    if local:
+        tdir = source
+    else:
+        from huggingface_hub import snapshot_download
+        tdir = os.path.join(snapshot_download(source, allow_patterns=["transformer/*"]), "transformer")
+    cfg = WanTransformer3DModel.load_config(tdir)
+    with init_empty_weights():
+        tr = WanTransformer3DModel.from_config(cfg)
+    keep = tr._keep_in_fp32_modules or []
+    for mname, mod in tr.named_modules():
+        for pname, p in list(mod._parameters.items()):
+            if p is None:
+                continue
+            full = f"{mname}.{pname}" if mname else pname
+            dt = torch.float32 if any(k in full.split(".") for k in keep) else torch.bfloat16
+            mod._parameters[pname] = torch.nn.Parameter(torch.empty_like(p, dtype=dt, device="meta"), requires_grad=False)
+    if fp8 and FP8 is not None:
+        tr.enable_layerwise_casting(storage_dtype=FP8, compute_dtype=torch.bfloat16)
+    target = {n: p.dtype for n, p in tr.named_parameters()}
+    idx = os.path.join(tdir, "diffusion_pytorch_model.safetensors.index.json")
+    files = sorted(set(json.load(open(idx))["weight_map"].values())) if os.path.exists(idx) else ["diffusion_pytorch_model.safetensors"]
+    seen = set()
+    for fn in files:
+        with safe_open(os.path.join(tdir, fn), framework="pt", device="cpu") as f:
+            for k in f.keys():
+                if k in target:
+                    t = f.get_tensor(k)
+                    if target[k] == FP8:
+                        t = t.to(torch.bfloat16)      # same double rounding as the standard route
+                    set_module_tensor_to_device(tr, k, "cpu", value=t.to(target[k]))
+                    seen.add(k)
+        mem(f"loaded {fn}")
+    missing = set(target) - seen
+    if missing:
+        raise RuntimeError(f"{len(missing)} transformer weights missing, e.g. {sorted(missing)[:3]}")
+    return tr.eval()
+
+
 def load_generator(model_key, device="cuda", fp8=True, offload=False, vae_tiling=True):
     from diffusers import AutoencoderKLWan, WanPipeline, WanTransformer3DModel
     mid = MODELS[model_key]["id"]
     mem("before video model")
     vae = AutoencoderKLWan.from_pretrained(mid, subfolder="vae", torch_dtype=torch.float32)
     mem("VAE loaded")
-    tr = WanTransformer3DModel.from_pretrained(mid, subfolder="transformer", torch_dtype=torch.bfloat16)
-    mem("transformer in RAM (bf16)")
-    if fp8 and FP8 is not None:
-        tr.enable_layerwise_casting(storage_dtype=FP8, compute_dtype=torch.bfloat16)
-        import gc
-        gc.collect()
-        mem("transformer stored as fp8")
+    tr = load_transformer_lowmem(mid, fp8=fp8)
+    mem("transformer loaded" + (" (fp8 storage)" if fp8 else ""))
     pipe = WanPipeline.from_pretrained(mid, transformer=tr, vae=vae, text_encoder=None, tokenizer=None,
                                        torch_dtype=torch.bfloat16)
     if vae_tiling:

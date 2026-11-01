@@ -77,6 +77,9 @@ learned, hand-chosen, random constants, and unconstrained kernels.
 pip install -r requirements.txt
 huggingface-cli login            # if needed; the model is Wan-AI/Wan2.2-TI2V-5B-Diffusers
 
+# phase 1 alone first: the text encoder (int8 via bitsandbytes on the GPU, ~6 GB VRAM)
+python make_data.py --only-text
+
 # 0. time it first on a few prompts (prints seconds per budget per prompt)
 python make_data.py --n-train 2 --n-val 1 --n-test 2 --out data_trial
 
@@ -102,9 +105,13 @@ Results land in `results/`: `metrics.json`, `summary.md` and the side-by-side `.
 - Phase 2 loads the transformer stored in fp8 (about 5 GB) and computes in bf16, which works on
   Ampere, plus the VAE in fp32 with tiling.
 
+**If it dies silently** (no traceback), it was killed from outside, usually for memory. Every
+stage prints a `[...] RAM used / free, VRAM free` line, so the last one shows where it died. On
+Windows, `echo %errorlevel%` right after gives the exit code.
+
 **If it doesn't fit:**
 - `--offload` (model CPU offload);
-- `--te-device cpu`;
+- `--te cpu` (text encoder on the CPU) or `--te fp8`;
 - `--model wan21-1.3b` (Wan2.1, 1.3B; much faster, a fine dry run);
 - `--height 256 --width 448`.
 

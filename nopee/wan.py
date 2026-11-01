@@ -45,26 +45,88 @@ def sync(device):
 
 # ------------------------------------------------------------------------- phase 1: text
 
+def mem(tag=""):
+    """One line of RAM / VRAM use, so a silent crash shows where it happened."""
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        ram = f"RAM used {psutil.Process().memory_info().rss / 2**30:.1f} GB (free {vm.available / 2**30:.1f} of {vm.total / 2**30:.1f})"
+    except Exception:
+        ram = "RAM ?"
+    vr = ""
+    if torch.cuda.is_available():
+        free, total = torch.cuda.mem_get_info()
+        vr = f", VRAM free {free / 2**30:.1f} of {total / 2**30:.1f} GB"
+    print(f"[{tag}] {ram}{vr}", flush=True)
+
+
+def _te_mode(mode, device):
+    if mode != "auto":
+        return mode
+    if device != "cpu" and torch.cuda.is_available():
+        try:
+            import bitsandbytes  # noqa: F401
+            return "8bit"
+        except Exception:
+            return "fp8"
+    return "cpu"
+
+
 @torch.no_grad()
-def encode_prompts(model_key, prompts, device="cuda", fp8=True, max_len=512):
-    """Returns (list of prompt embeddings (1, L, 4096) fp16 on CPU, negative embedding)."""
-    from diffusers import WanPipeline
-    from diffusers.hooks import apply_layerwise_casting
+def encode_prompts(model_key, prompts, device="cuda", mode="auto", max_len=512):
+    """Encode prompts with Wan's UMT5-XXL text encoder, exactly as WanPipeline does.
+    Returns (list of (1, max_len, 4096) fp16 CPU tensors, negative embedding).
+
+    mode  8bit : bitsandbytes int8, streamed straight to the GPU (~6 GB VRAM, low RAM peak) [default with CUDA]
+          fp8  : bf16 into RAM (~11 GB peak), stored as fp8 on the GPU
+          cpu  : bf16 on the CPU (~11 GB RAM, slow but needs no GPU memory)
+    """
+    from transformers import AutoTokenizer, UMT5EncoderModel
+    from diffusers.pipelines.wan.pipeline_wan import prompt_clean
     mid = MODELS[model_key]["id"]
-    pipe = WanPipeline.from_pretrained(mid, transformer=None, vae=None, torch_dtype=torch.bfloat16)
-    te = pipe.text_encoder
-    if fp8 and device != "cpu" and FP8 is not None:
-        apply_layerwise_casting(te, storage_dtype=FP8, compute_dtype=torch.bfloat16)
-    te.to(device)
+    mode = _te_mode(mode, device)
+    print(f"text encoder mode: {mode}", flush=True)
+    mem("before text encoder")
+    tok = AutoTokenizer.from_pretrained(mid, subfolder="tokenizer")
+    if mode == "8bit":
+        from transformers import BitsAndBytesConfig
+        te = UMT5EncoderModel.from_pretrained(mid, subfolder="text_encoder", dtype=torch.bfloat16,
+                                              quantization_config=BitsAndBytesConfig(load_in_8bit=True),
+                                              device_map={"": 0}, low_cpu_mem_usage=True)
+        dev = "cuda"
+    else:
+        te = UMT5EncoderModel.from_pretrained(mid, subfolder="text_encoder", dtype=torch.bfloat16, low_cpu_mem_usage=True)
+        mem("text encoder in RAM")
+        dev = "cpu"
+        if mode == "fp8":
+            from diffusers.hooks import apply_layerwise_casting
+            apply_layerwise_casting(te, storage_dtype=FP8, compute_dtype=torch.bfloat16)
+            te.to("cuda")
+            dev = "cuda"
+    te.eval()
+    mem("text encoder loaded")
+
+    def enc(text):
+        t = tok([prompt_clean(text)], padding="max_length", max_length=max_len, truncation=True,
+                add_special_tokens=True, return_attention_mask=True, return_tensors="pt")
+        n = int(t.attention_mask.sum())
+        e = te(t.input_ids.to(dev), t.attention_mask.to(dev)).last_hidden_state[0, :n].float()
+        e = torch.cat([e, e.new_zeros(max_len - n, e.shape[1])])     # Wan zero-pads past the prompt
+        return e[None].to("cpu", torch.float16)
+
     out = []
-    for p in prompts:
-        e, _ = pipe.encode_prompt(p, do_classifier_free_guidance=False, max_sequence_length=max_len, device=device)
-        out.append(e.to("cpu", torch.float16))
-    neg, _ = pipe.encode_prompt(NEGATIVE, do_classifier_free_guidance=False, max_sequence_length=max_len, device=device)
-    del pipe, te
-    if device != "cpu":
+    for i, p in enumerate(prompts):
+        out.append(enc(p))
+        if i % 10 == 0:
+            print(f"  encoded {i + 1}/{len(prompts)}", flush=True)
+    neg = enc(NEGATIVE)
+    del te
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    return out, neg.to("cpu", torch.float16)
+    mem("text encoder freed")
+    return out, neg
 
 
 # ------------------------------------------------------------------------- phase 2: video
@@ -72,10 +134,16 @@ def encode_prompts(model_key, prompts, device="cuda", fp8=True, max_len=512):
 def load_generator(model_key, device="cuda", fp8=True, offload=False, vae_tiling=True):
     from diffusers import AutoencoderKLWan, WanPipeline, WanTransformer3DModel
     mid = MODELS[model_key]["id"]
+    mem("before video model")
     vae = AutoencoderKLWan.from_pretrained(mid, subfolder="vae", torch_dtype=torch.float32)
+    mem("VAE loaded")
     tr = WanTransformer3DModel.from_pretrained(mid, subfolder="transformer", torch_dtype=torch.bfloat16)
+    mem("transformer in RAM (bf16)")
     if fp8 and FP8 is not None:
         tr.enable_layerwise_casting(storage_dtype=FP8, compute_dtype=torch.bfloat16)
+        import gc
+        gc.collect()
+        mem("transformer stored as fp8")
     pipe = WanPipeline.from_pretrained(mid, transformer=tr, vae=vae, text_encoder=None, tokenizer=None,
                                        torch_dtype=torch.bfloat16)
     if vae_tiling:
@@ -88,6 +156,7 @@ def load_generator(model_key, device="cuda", fp8=True, offload=False, vae_tiling
     else:
         pipe.to(device)
     pipe.set_progress_bar_config(disable=True)
+    mem("video model ready")
     return pipe
 
 

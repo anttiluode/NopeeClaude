@@ -5,14 +5,25 @@ all from the same initial noise. Resumable (skips prompts already on disk).
     python make_data.py --model wan21-1.3b   # faster stand-in
     python make_data.py --tiny               # random miniature Wan, CPU, for testing the pipeline
 """
+import os
+
+# transformers would otherwise import TensorFlow/Flax if they are installed (slow, and wastes RAM)
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_FLAX", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
 import argparse
+import faulthandler
 import json
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from nopee.wan import BUDGETS, MODELS, TINY, encode_prompts, generate, load_generator, noise_for, tiny_generator
+from nopee.wan import BUDGETS, MODELS, TINY, encode_prompts, generate, load_generator, mem, noise_for, tiny_generator
+
+faulthandler.enable()   # a native crash prints where it happened instead of vanishing
 
 ROOT = Path(__file__).resolve().parent
 
@@ -40,7 +51,9 @@ def main():
     ap.add_argument("--frames", type=int)
     ap.add_argument("--no-fp8", action="store_true")
     ap.add_argument("--offload", action="store_true", help="model CPU offload if fp8 on GPU does not fit")
-    ap.add_argument("--te-device", default=None, help="device for the text encoder (default: same as video)")
+    ap.add_argument("--te", default="auto", choices=("auto", "8bit", "fp8", "cpu"),
+                    help="text encoder: 8bit (bitsandbytes, default with CUDA), fp8, or cpu")
+    ap.add_argument("--only-text", action="store_true", help="stop after phase 1 (encode prompts)")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() and not args.tiny else "cpu"
@@ -68,10 +81,13 @@ def main():
             neg = torch.randn(1, cfg["text_len"], cfg["text_dim"], generator=g)
         else:
             print("phase 1: encoding prompts", flush=True)
-            embs, neg = encode_prompts(args.model, [prompts[i] for i in needed], args.te_device or dev, fp8=not args.no_fp8)
+            embs, neg = encode_prompts(args.model, [prompts[i] for i in needed], dev, mode=args.te)
             E = dict(zip(needed, embs))
         torch.save(dict(E=E, neg=neg), emb_path)
     em = torch.load(emb_path)
+    if args.only_text:
+        print(f"phase 1 done: {len(em['E'])} prompts in {emb_path}")
+        return
 
     # phase 2: video
     print("phase 2: loading the video model", flush=True)

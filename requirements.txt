@@ -2,6 +2,8 @@ torch>=2.4
 diffusers>=0.35
 transformers
 accelerate
+bitsandbytes
+psutil
 ftfy
 sentencepiece
 imageio

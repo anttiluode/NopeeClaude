@@ -8,6 +8,7 @@ Two phases so the two big pieces are never in memory together:
 Every condition of one prompt starts from the same initial noise, so a cheap run and the
 expensive reference are two discretisations of the same flow-matching ODE trajectory.
 """
+import re
 import time
 from contextlib import contextmanager
 
@@ -36,6 +37,20 @@ BUDGETS = {
     "s12c": dict(steps=12, cache=0.10),     # 12 steps + FirstBlockCache (skips blocks when step changes little)
 }
 FP8 = getattr(torch, "float8_e4m3fn", None)
+LAST = {}      # stats of the last generate() call: share of transformer calls that ran all blocks
+
+
+def parse_budget(name):
+    """'ref' / 's6' / 's12c' from BUDGETS, or any 's<steps>' / 's<steps>c<threshold>' e.g. 's40c0.15'."""
+    if name in BUDGETS:
+        return dict(BUDGETS[name])
+    m = re.fullmatch(r"s(\d+)(?:c([0-9.]+))?", name)
+    if not m:
+        raise ValueError(f"unknown budget {name!r}")
+    b = dict(steps=int(m.group(1)))
+    if m.group(2):
+        b["cache"] = float(m.group(2))
+    return b
 
 
 def sync(device):
@@ -260,6 +275,9 @@ def generate(pipe, cfg, emb, neg, noise, steps, cache=None, record=False):
         xs.append(kw["latents"].detach().to("cpu", torch.float16))
         return {}
 
+    calls = {"head": 0, "tail": 0}
+    hs = [pipe.transformer.blocks[0].register_forward_hook(lambda *a: calls.__setitem__("head", calls["head"] + 1)),
+          pipe.transformer.blocks[-1].ffn.register_forward_hook(lambda *a: calls.__setitem__("tail", calls["tail"] + 1))]
     with cache_enabled(pipe, cache):
         sync(dev)
         t0 = time.perf_counter()
@@ -269,6 +287,9 @@ def generate(pipe, cfg, emb, neg, noise, steps, cache=None, record=False):
                    callback_on_step_end=cb if record else None).frames
         sync(dev)
         sec = time.perf_counter() - t0
+    for h in hs:
+        h.remove()
+    LAST["computed"] = calls["tail"] / max(calls["head"], 1)
     traj = None
     if record:
         ts = pipe.scheduler.timesteps.detach().cpu()

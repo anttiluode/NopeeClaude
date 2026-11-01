@@ -109,3 +109,36 @@ transformer.
 - 24 test prompts at one resolution is small.
 - Public few-step distillations of Wan exist (LightX2V; FastVideo's FastWan2.2-TI2V-5B, distilled
   to a few steps). Beating plain fewer-step UniPC does not beat those.
+
+## Trial run (Nov 1 2026, timing only, recorded before the full run)
+
+**What was run.** `make_data.py --n-train 2 --n-val 1 --n-test 2 --out data_trial` on the RTX 3060,
+5 prompts. Nothing was decoded, trained or evaluated.
+
+**Timings, seconds per prompt** (identical within ±2% across the 5 prompts):
+
+| ref (40 steps) | s6 | s12 | s24 | s12c (12 steps + cache 0.10) |
+|---|---|---|---|---|
+| 90–94 | 13.6–14.0 | 27.1–27.9 | 54.2–56.0 | 27.1–28.2 |
+
+**What this shows.**
+- **Cost is linear in steps:** 2.3 s per step, i.e. about 1.15 s per transformer pass with
+  guidance. ref/s6 = 6.6, so G0 should pass.
+- **The cache budget as preregistered does nothing.** s12c takes the same time as s12, so
+  FirstBlockCache at threshold 0.10 skipped no work at 12 steps. (The skip counter, which counts
+  whether the last block's feed-forward ran, was added after this trial.)
+- Peak RAM was 12.9 of 23.8 GB with the old loader. The tensor-by-tensor loader (added after) cuts
+  this.
+
+**Amendment 1 (decided now, before any full-run data).**
+- The cache budget is taken out of the first full pass.
+- Its threshold will be chosen with `cache_sweep.py` on 3 *validation* prompts only. The sweep
+  covers thresholds 0.05–0.3 at 12 and 40 steps, and records time, the share of calls that ran
+  every block, and closeness to the reference.
+- The rule: the highest threshold at 12 steps whose MSE to the reference is no worse than s6's
+  `none`, with at least a 20% time saving. If none qualifies, the cache budget is dropped and that
+  is reported.
+- The chosen budget (`s12c<threshold>`) is then added to all splits with `make_data.py --budgets`.
+  It stays report-only, as before.
+- The trial prompts (indices 80, 36, 20, 5, 23) are all *test* prompts of the full split. They were
+  only timed, never looked at, and are not used for the sweep.

@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from nopee.wan import BUDGETS, MODELS, TINY, encode_prompts, generate, load_generator, mem, noise_for, tiny_generator
+from nopee.wan import LAST, MODELS, parse_budget, TINY, encode_prompts, generate, load_generator, mem, noise_for, tiny_generator
 
 faulthandler.enable()   # a native crash prints where it happened instead of vanishing
 
@@ -54,6 +54,7 @@ def main():
     ap.add_argument("--te", default="auto", choices=("auto", "8bit", "fp8", "cpu"),
                     help="text encoder: 8bit (bitsandbytes, default with CUDA), fp8, or cpu")
     ap.add_argument("--only-text", action="store_true", help="stop after phase 1 (encode prompts)")
+    ap.add_argument("--splits", default="val,train,test", help="which splits to generate, in this order")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() and not args.tiny else "cpu"
@@ -67,8 +68,11 @@ def main():
             cfg[k] = getattr(args, k)
     budgets = args.budgets.split(",")
     meta = dict(model="tiny" if args.tiny else args.model, cfg={k: v for k, v in cfg.items() if k != "id"},
-                budgets={b: BUDGETS[b] for b in budgets}, splits=sp, record=args.record,
+                budgets={b: parse_budget(b) for b in budgets}, splits=sp, record=args.record,
                 fp8=not args.no_fp8, prompts={i: prompts[i] for s in sp.values() for i in s})
+    if (out / "meta.json").exists():                   # adding budgets later keeps the earlier ones
+        old = json.loads((out / "meta.json").read_text())
+        meta["budgets"] = {**old.get("budgets", {}), **meta["budgets"]}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
 
     # phase 1: text (never in memory together with the video transformer)
@@ -93,25 +97,30 @@ def main():
     print("phase 2: loading the video model", flush=True)
     pipe = tiny_generator() if args.tiny else load_generator(args.model, dev, fp8=not args.no_fp8, offload=args.offload)
     first = needed[0]
-    generate(pipe, cfg, em["E"][first], em["neg"], noise_for(pipe, cfg, 1, dev), BUDGETS["s6"]["steps"])  # warm-up
-    for split in ("test", "val", "train"):
+    generate(pipe, cfg, em["E"][first], em["neg"], noise_for(pipe, cfg, 1, dev), 6)  # warm-up
+    for split in args.splits.split(","):
         (out / split).mkdir(exist_ok=True)
         for i in sp[split]:
             f = out / split / f"{i:04d}.pt"
-            if f.exists():
+            rec = torch.load(f) if f.exists() else dict(prompt=prompts[i], seed=10_000 + i, lat={}, sec={})
+            rec.setdefault("computed", {})
+            todo = [b for b in budgets if b not in rec["lat"]]      # resumable, and budgets can be added later
+            if not todo:
                 continue
             noise = noise_for(pipe, cfg, 10_000 + i, dev)
-            rec = dict(prompt=prompts[i], seed=10_000 + i, lat={}, sec={})
-            for b in budgets:
-                bb = BUDGETS[b]
+            for b in todo:
+                bb = parse_budget(b)
                 lat, sec, traj = generate(pipe, cfg, em["E"][i], em["neg"], noise, bb["steps"], bb.get("cache"),
                                           record=(b == args.record and split != "test"))
                 rec["lat"][b] = lat.to("cpu", torch.float16)
                 rec["sec"][b] = sec
+                rec["computed"][b] = LAST["computed"]
                 if traj is not None:
                     rec["traj"] = traj
             torch.save(rec, f)
-            print(f"{split} {i:4d}  " + "  ".join(f"{b} {rec['sec'][b]:.1f}s" for b in budgets), flush=True)
+            print(f"{split} {i:4d}  " + "  ".join(
+                f"{b} {rec['sec'][b]:.1f}s" + (f" ({100 * rec['computed'][b]:.0f}% full)" if "c" in b else "")
+                for b in todo), flush=True)
 
 
 if __name__ == "__main__":

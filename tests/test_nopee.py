@@ -94,3 +94,14 @@ def test_lowmem_loader_matches_standard(tmp_path):
     kw = dict(timestep=torch.tensor([500.0]), encoder_hidden_states=torch.randn(1, 8, 16).bfloat16(), return_dict=False)
     with torch.no_grad():
         assert torch.equal(a(hidden_states=x.bfloat16(), **kw)[0], b(hidden_states=x.bfloat16(), **kw)[0])
+
+
+def test_cache_counter_sees_skips():
+    from nopee.wan import LAST
+    pipe = tiny_generator()
+    emb, neg = torch.randn(1, 8, 16), torch.randn(1, 8, 16)
+    n = noise_for(pipe, TINY, 5, "cpu")
+    generate(pipe, TINY, emb, neg, n, 12)
+    assert LAST["computed"] == 1.0
+    generate(pipe, TINY, emb, neg, n, 12, cache=0.5)
+    assert LAST["computed"] < 0.5

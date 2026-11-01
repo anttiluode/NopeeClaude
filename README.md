@@ -83,8 +83,12 @@ python make_data.py --only-text
 # 0. time it first on a few prompts (prints seconds per budget per prompt)
 python make_data.py --n-train 2 --n-val 1 --n-test 2 --out data_trial
 
-# 1. the preregistered data: 84 prompts x 5 budgets (resumable: stop and restart freely)
-python make_data.py
+# 1. the preregistered data (resumable: stop and restart freely; budgets can be added later)
+python make_data.py --splits val --budgets ref,s6,s12,s24     # validation prompts first (~40 min)
+python cache_sweep.py                                          # pick the cache threshold (PREREG Amendment 1)
+python make_data.py --budgets ref,s6,s12,s24                   # everything else (~4 h on a 3060)
+python make_data.py --budgets s12c<chosen>                     # add the cache budget to every prompt
+python preview.py --data data --budgets ref,s6,s12             # look at some videos (VAE only)
 
 # 2. final-latent adapters (minutes)
 python train_adapters.py

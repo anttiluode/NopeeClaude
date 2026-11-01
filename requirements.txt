@@ -1,0 +1,11 @@
+torch>=2.4
+diffusers>=0.35
+transformers
+accelerate
+ftfy
+sentencepiece
+imageio
+imageio-ffmpeg
+numpy
+matplotlib
+pytest

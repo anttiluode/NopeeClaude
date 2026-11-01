@@ -1,0 +1,99 @@
+# One prompt per line. Split into train / val / test by a fixed permutation (make_data.py).
+A red fox trotting through fresh snow in a birch forest, morning light
+Waves breaking on black volcanic rocks, slow motion spray
+A cyclist riding along a gravel road between wheat fields at sunset
+Close-up of rain drops falling into a puddle on a city street at night, neon reflections
+A cat stretching on a sunny windowsill, curtains moving in the breeze
+Time-lapse of clouds rolling over a mountain ridge
+A steam locomotive crossing a stone bridge in autumn
+A hummingbird hovering at a red flower, wings blurred
+An old man playing chess in a park, leaves falling
+A sailboat on a calm lake reflecting pine trees, gentle ripples
+Children running through a sprinkler on a summer lawn
+A chef tossing vegetables in a flaming wok
+A jellyfish pulsing in dark blue water, glowing tentacles
+A busy Tokyo crossing seen from above, people streaming in all directions
+A dog shaking water off its fur on a beach
+Northern lights rippling over a frozen lake in Finland
+A potter shaping clay on a spinning wheel, hands close-up
+A field of sunflowers swaying in the wind, bees flying
+Snow falling on a quiet wooden cabin at night, warm windows
+A drone shot flying low over a turquoise river in a canyon
+A ballerina spinning on a dark stage under a single spotlight
+Coffee being poured into a white cup, steam rising
+A horse galloping across a misty meadow at dawn
+Fireworks bursting over a harbour, reflections on the water
+A koi pond with orange fish circling under lily pads
+A blacksmith hammering glowing iron, sparks flying
+A tram moving through a narrow street in Lisbon
+An owl turning its head on a branch at dusk
+Leaves of a maple tree rustling, sunlight flickering through
+A skateboarder doing a trick in an empty concrete pool
+Lava flowing slowly down a dark slope, crust cracking
+A woman reading a book in a cafe by the window, rain outside
+A school of silver fish turning together in the ocean
+Wind turbines turning on a green hill under a cloudy sky
+A candle flame flickering in a dark room
+A toddler stacking colourful wooden blocks on a rug
+A heron catching a fish in shallow water
+Traffic on a highway at night, long light trails
+A paper boat floating down a rain gutter
+A lighthouse beam sweeping across a stormy sea
+An astronaut floating inside a space station, objects drifting
+A street musician playing violin in a snowy square
+Waterfall plunging into a green pool in a rainforest
+Bread dough being kneaded on a floured table
+A flock of starlings forming shapes in the evening sky
+A vintage car driving along a coastal road with cliffs
+Ink drops spreading in a glass of water
+A squirrel eating a nut on a fence
+A sand dune with wind blowing ribbons of sand
+Rowers pulling oars in unison on a foggy river
+A hot air balloon rising over a patchwork of fields
+Kittens playing with a ball of yarn
+A thunderstorm over the plains, lightning striking in the distance
+A glass of sparkling water with bubbles rising, macro shot
+A market in Marrakech with spices and lanterns, people walking
+A penguin colony waddling on ice, one sliding on its belly
+A woodpecker drumming on a tree trunk
+A slow pan across a library with tall wooden shelves
+Autumn leaves swirling on a cobblestone street
+A runner crossing a finish line, crowd cheering
+Neon signs buzzing in a rainy alley, steam from a vent
+A tortoise walking slowly across dry grass
+A city skyline transitioning from day to night
+Two dancers performing tango in an old ballroom
+A butterfly emerging from a chrysalis
+A ferris wheel turning at a fair at dusk
+A mountain goat climbing a steep rocky cliff
+Surfer riding a big green wave, spray in the sunlight
+A field of lavender with wind moving through it
+A bonfire on a beach at night with sparks rising
+Robot arm assembling parts on a factory line
+A bear catching salmon in a rushing river
+Morning fog lifting over a still pond with reeds
+A typewriter typing, keys striking paper, close-up
+A crowd of umbrellas crossing a street in heavy rain
+Sea turtle swimming over a coral reef
+A windmill in the Dutch countryside with tulips in front
+A violinist's fingers on the strings, shallow depth of field
+A bowl of ramen with steam and chopsticks lifting noodles
+A cat watching birds through a window, tail twitching
+Ice cracking on a frozen river in spring
+A train window view of passing forests and lakes
+Bees crawling over a honeycomb
+A man walking a dog along a foggy pier
+Sun rays through a cathedral window, dust in the air
+Children flying kites on a windy hill
+A desert road with a car approaching through heat haze
+A deer drinking from a stream in a quiet forest
+Chalk drawing being made on a sidewalk
+A spinning globe on a desk in a sunlit study
+Wheat being harvested by a combine at golden hour
+Snowboarder carving down fresh powder
+A goldfish in a round bowl on a kitchen table
+Fog rolling through the Golden Gate Bridge
+A girl blowing out candles on a birthday cake
+Rain running down a window with blurred city lights behind
+A slow zoom into an old map on a wooden table
+Seagulls hovering over a fishing boat at sea

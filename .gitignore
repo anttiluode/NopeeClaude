@@ -1,0 +1,5 @@
+data/
+adapters/
+runs/
+__pycache__/
+*.pyc

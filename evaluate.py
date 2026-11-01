@@ -120,10 +120,6 @@ def main():
             from diffusers import AutoencoderKLWan
             from diffusers.video_processor import VideoProcessor
             vae = AutoencoderKLWan.from_pretrained(MODELS[meta["model"]]["id"], subfolder="vae", torch_dtype=torch.float32).to(dev)
-            try:
-                vae.enable_tiling()
-            except Exception:
-                pass
             dp = SimpleNamespace(vae=vae, video_processor=VideoProcessor(vae_scale_factor=vae.config.scale_factor_spatial))
         D = {}
         show = [b for b in ("s6", "s12") if b in budgets]

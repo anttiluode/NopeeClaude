@@ -26,11 +26,13 @@ def main():
     ap.add_argument("--data", default="data_trial")
     ap.add_argument("--budgets", default="ref,s6,s12")
     ap.add_argument("--out", default="previews")
+    ap.add_argument("--n", type=int, default=4, help="how many prompts (validation/train only, never test)")
     args = ap.parse_args()
     recs = []
-    for split in ("test", "val", "train"):
+    for split in ("val", "train"):                   # test prompts are not looked at before evaluation
         meta, r = load_split(ROOT / args.data, split)
         recs += r
+    recs = recs[:args.n]
     dev = "cuda" if torch.cuda.is_available() and meta["model"] != "tiny" else "cpu"
     if meta["model"] == "tiny":
         dp = tiny_generator()
@@ -38,12 +40,7 @@ def main():
         from diffusers import AutoencoderKLWan
         from diffusers.video_processor import VideoProcessor
         vae = AutoencoderKLWan.from_pretrained(MODELS[meta["model"]]["id"], subfolder="vae", torch_dtype=torch.float32).to(dev)
-        try:
-            vae.enable_tiling()
-        except Exception:
-            pass
-        dp = SimpleNamespace(vae=vae, video_processor=__import__("diffusers.video_processor", fromlist=["VideoProcessor"]).VideoProcessor(
-            vae_scale_factor=vae.config.scale_factor_spatial))
+        dp = SimpleNamespace(vae=vae, video_processor=VideoProcessor(vae_scale_factor=vae.config.scale_factor_spatial))
     out = ROOT / args.out
     out.mkdir(exist_ok=True)
     budgets = [b for b in args.budgets.split(",") if all(b in r["lat"] for r in recs)]

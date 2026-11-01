@@ -142,3 +142,45 @@ transformer.
   It stays report-only, as before.
 - The trial prompts (indices 80, 36, 20, 5, 23) are all *test* prompts of the full split. They were
   only timed, never looked at, and are not used for the sweep.
+
+## Validation data and cache sweep (Nov 1 2026, before any train/test data or adapter)
+
+**Generated.** All 12 validation prompts with ref, s6, s12 and s24. Timings repeat the trial:
+92 / 13.9 / 27.7 / 55.4 s.
+
+**Cache sweep** (`cache_sweep.py`; 3 validation prompts; MSE of normalised latents to the 40-step
+reference):
+
+| run | seconds | calls that ran every block | MSE to ref |
+|---|---|---|---|
+| 12 steps, no cache | 27.7 | 100% | 1.396 |
+| 12 steps, cache 0.05 / 0.1 | 27.8 / 28.1 | 100% | 1.396 |
+| 12 steps, cache 0.2 | 22.0 | 78% | 1.337 |
+| 12 steps, cache 0.3 | 17.5 | 58% | 1.193 |
+| 12 steps, cache 0.5 | 13.1 | 43% | 1.655 |
+| 40 steps, cache 0.05 | 78.4 | 83% | 0.038 |
+| 40 steps, cache 0.1 | 54.2 | 55% | 0.158 |
+| 40 steps, cache 0.2 | 36.0 | 33% | 0.444 |
+| 40 steps, cache 0.3 | 28.3 | 24% | 0.484 |
+| 40 steps, cache 0.5 | 21.5 | 16% | 0.947 |
+
+**Two observations that bear on the design.**
+1. **The 12-step run is not a rougher copy of the reference.** An MSE of about 1.4 on normalised
+   latents is a large fraction of what two unrelated videos would give. If the cheap runs land on
+   *different* videos, not blurrier versions of the same one, then a small local filter trained
+   with MSE cannot recover the difference. It can only shrink toward an average, which lowers MSE
+   while making the video worse. G1 could then "pass" for the wrong reason. `inspect_data.py`
+   measures this; the result decides Amendment 2.
+2. **At matched time, caching beats cutting steps.** 40 steps with cache 0.3 (28.3 s) stays about
+   3× closer to the reference than 12 steps (27.7 s). 40 steps with cache 0.5 is 4.3× faster than
+   the reference and still closer than 12 steps. This is report-only, n = 3. It fits TBC's own
+   account: the speed comes from caching, and the adapter keeps quality.
+
+**Amendment 2 (pending; decided before any train/test data or adapter training).** If
+`inspect_data.py` shows the step-cut runs are far from their references (share > 0.5), the
+primary cheap budget for the gates changes:
+- from s6 to a cached 40-step run (`s40c0.3`, about 3.2× faster);
+- s12 `none` is replaced in G2 by `s40c0.1` `none`;
+- s6 and s12 are kept, report-only.
+
+The final choice and its reason will be written here before the next data are generated.

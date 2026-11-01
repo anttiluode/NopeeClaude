@@ -146,7 +146,7 @@ def encode_prompts(model_key, prompts, device="cuda", mode="auto", max_len=512):
 
 # ------------------------------------------------------------------------- phase 2: video
 
-def load_transformer_lowmem(source, fp8=True, local=False):
+def load_transformer_lowmem(source, fp8=True, local=False, device="cpu"):
     """Load the Wan transformer one tensor at a time, casting each straight to its storage dtype.
 
     The Wan2.2-5B repo stores the transformer in fp32 (~20 GB). The normal route builds the whole
@@ -189,22 +189,25 @@ def load_transformer_lowmem(source, fp8=True, local=False):
                     t = f.get_tensor(k)
                     if target[k] == FP8:
                         t = t.to(torch.bfloat16)      # same double rounding as the standard route
-                    set_module_tensor_to_device(tr, k, "cpu", value=t.to(target[k]))
+                    set_module_tensor_to_device(tr, k, device, value=t.to(target[k]))   # straight to its home
+                    del t
                     seen.add(k)
         mem(f"loaded {fn}")
     missing = set(target) - seen
     if missing:
         raise RuntimeError(f"{len(missing)} transformer weights missing, e.g. {sorted(missing)[:3]}")
+    for n, b in list(tr.named_buffers()):            # rope tables were built on the CPU
+        set_module_tensor_to_device(tr, n, device, value=b)
     return tr.eval()
 
 
-def load_generator(model_key, device="cuda", fp8=True, offload=False, vae_tiling=True):
+def load_generator(model_key, device="cuda", fp8=True, offload=False, vae_tiling=False):
     from diffusers import AutoencoderKLWan, WanPipeline, WanTransformer3DModel
     mid = MODELS[model_key]["id"]
     mem("before video model")
     vae = AutoencoderKLWan.from_pretrained(mid, subfolder="vae", torch_dtype=torch.float32)
     mem("VAE loaded")
-    tr = load_transformer_lowmem(mid, fp8=fp8)
+    tr = load_transformer_lowmem(mid, fp8=fp8, device="cpu" if offload else device)
     mem("transformer loaded" + (" (fp8 storage)" if fp8 else ""))
     pipe = WanPipeline.from_pretrained(mid, transformer=tr, vae=vae, text_encoder=None, tokenizer=None,
                                        torch_dtype=torch.bfloat16)

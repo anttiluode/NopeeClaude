@@ -91,6 +91,6 @@ def test_lowmem_loader_matches_standard(tmp_path):
         assert sa[k].dtype == sb[k].dtype, k
         assert torch.equal(sa[k].float(), sb[k].float()), k
     x = torch.randn(1, 16, 3, 4, 4)
-    kw = dict(timestep=torch.tensor([500.0]), encoder_hidden_states=torch.randn(1, 8, 16), return_dict=False)
+    kw = dict(timestep=torch.tensor([500.0]), encoder_hidden_states=torch.randn(1, 8, 16).bfloat16(), return_dict=False)
     with torch.no_grad():
         assert torch.equal(a(hidden_states=x.bfloat16(), **kw)[0], b(hidden_states=x.bfloat16(), **kw)[0])

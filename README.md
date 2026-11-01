@@ -9,6 +9,67 @@ real run. **No real Wan run has been done yet.** The code was built and tested i
 no GPU and no access to Hugging Face, against a randomly initialised miniature Wan that runs the
 same diffusers code paths. The first real numbers will come from your 3060.
 
+## Status, Nov 1 2026 evening: what the 3060 showed, and what I think
+
+**Short version: not the bee's knees. Don't run the 4-hour main experiment in its current
+form.** The measurements before any adapter was trained already answer most of the question, and
+the answer isn't the one the design assumed.
+
+**Measured on the 12 validation prompts** (`inspect_data.py`; "share" = latent distance to the
+40-step reference as a fraction of the distance between two unrelated videos; "low" = the same
+after keeping only rough layout):
+
+| budget | time | speedup | share | layout share | correlation | PSNR to ref (4 prompts) |
+|---|---|---|---|---|---|---|
+| s6 | 13.9 s | 6.6× | 0.42 | 0.36 | 0.67 | 8–14.5 dB |
+| s12 | 27.7 s | 3.3× | 0.32 | 0.26 | 0.75 | 10–17.4 dB |
+| s24 | 55.4 s | 1.7× | 0.21 | 0.14 | 0.83 | 12–18.6 dB |
+| 40 steps + cache 0.3 | 28.3 s | 3.2× | ≈0.12* | | | |
+| 40 steps + cache 0.5 | 21.5 s | 4.3× | ≈0.23* | | | |
+
+\* From the 3-prompt cache sweep (MSE 0.48 and 0.95), divided by the unrelated-video MSE of 4.19.
+Different prompts, so this is indicative only.
+
+Each strip below is reference | 6 steps | 12 steps | 24 steps, middle frame (validation prompts):
+
+![waterfall](docs/img/val_0042_waterfall.png)
+![library](docs/img/val_0057_library.png)
+![robot](docs/img/val_0070_robot.png)
+![cathedral](docs/img/val_0084_cathedral.png)
+
+**What I read from this:**
+
+1. **Cutting steps doesn't make a rougher copy; it makes a broken or different video.** At 6
+   and 12 steps the subject is often gone: no robot, the waterfall smeared into vertical streaks.
+   Sometimes something new appears: at 6 steps the cathedral window turned into a chandelier. Only
+   at 24 steps (just 1.7× faster) does the scene come back. A ~5k-parameter local filter can't
+   repair that. Trained to minimise the distance, it would learn to blur toward an average and
+   could "pass" G1 while making the video worse. The final-latent adapter experiment is therefore
+   dead before training. By the rule I wrote in advance, Amendment 2 does *not* trigger (share
+   0.42 < 0.5). The previews show a problem that rule didn't foresee, so I'm pausing rather than
+   switching (see `docs/PREREG.md`).
+2. **The reference itself isn't good at this size.** Wan2.2-TI2V-5B was trained at 704×1280. At
+   320×576 even the 40-step reference is oversaturated and streaky. Everything measured here is a
+   model running far from its design point, so it isn't a fair picture of Wan, of TBC, or of the
+   idea.
+3. **The lever that works is caching, and it needs no neurons.** At the same 28 s, keeping 40
+   steps with FirstBlockCache 0.3 stays far closer to the reference than cutting to 12 steps.
+   Cache 0.5 is 4.3× faster and still closer than 12 steps. That matches TBC's own account of
+   where their prototype's speed came from (cache, a better sampler, fewer steps, serving). It also
+   means most of a "5× faster Wan" is available with a one-line diffusers setting.
+4. **The other way to get real few-step Wan is distillation**: a model *trained* to sample in 3–4
+   steps (FastVideo's FastWan2.2-TI2V-5B, LightX2V). That's a full training job, not a 0.1%
+   adapter, and it's how the public fast versions do it.
+
+**What is still worth doing, if anything:**
+- **The plausible TBC shape:** an adapter that cleans up *caching* errors (40 steps + cache 0.3–0.5).
+  Those errors are smaller and more local, the kind a small filter could fix. It's only fair at a
+  resolution where the reference is good: try 480×832 first, and check the reference preview
+  before generating anything. On a 3060 that's roughly 2.5–3× the time per video.
+- **Or stop here** with the honest conclusion: on consumer hardware, fast Wan means caching plus
+  distilled checkpoints. Whether neuron-derived constants add anything can't be tested without
+  TBC's recordings, and this repo can't supply those.
+
 ## What TBC says they did
 
 Sources: their [technology page](https://www.tbc.co/technology),

@@ -184,3 +184,30 @@ primary cheap budget for the gates changes:
 - s6 and s12 are kept, report-only.
 
 The final choice and its reason will be written here before the next data are generated.
+
+### Amendment 2: resolved (Nov 1 2026 evening): main run paused, not switched
+
+**`inspect_data.py`, 12 validation prompts** (share = MSE to ref / MSE between unrelated
+references, which is 4.19):
+
+| budget | share | layout (4× pooled) share | correlation |
+|---|---|---|---|
+| s6 | 0.42 | 0.36 | 0.67 |
+| s12 | 0.32 | 0.26 | 0.75 |
+| s24 | 0.21 | 0.14 | 0.83 |
+
+**Decoded previews** (4 validation prompts): PSNR to ref is 8–14.5 dB at s6, 10–17.4 dB at s12 and
+12–18.6 dB at s24.
+
+**By the rule written in advance (switch if share > 0.5), Amendment 2 does not trigger.** The
+previews show two things the rule did not anticipate:
+- **The cheap runs are broken, not rougher.** At s6 and s12 the subject is often missing, and
+  sometimes different content appears.
+- **The 40-step reference is poor at 320×576.** It is oversaturated and streaky, because the model
+  was trained at 704×1280.
+
+Neither switching the budget nor running the gates at this resolution would test what the
+preregistration meant to test. **The main run is paused.** No train or test data were generated
+and no adapter was trained. The gates G0–G5 are not evaluated. If the experiment resumes, it does
+so under a new preregistration (a cached-40-step primary budget, at a resolution where the
+reference is checked first). It does not resume under this one.
